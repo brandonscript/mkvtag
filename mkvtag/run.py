@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import subprocess
 import sys
@@ -11,6 +12,9 @@ from pathlib import Path
 from humanize import naturaltime
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class File:
@@ -70,14 +74,14 @@ class ConvertedVideoHandler(FileSystemEventHandler):
     def __init__(self, watch_dir: Path = Path.cwd()):
         self.watch_dir = watch_dir
         self.log_file = self.watch_dir / "processed_files.txt"
-        print("Watching for new files...\n")
+        logger.info("Watching for new files...\n")
 
         self.scan()
-        # print(self.current_files, self.processed_files)
+        # logger.info(self.current_files, self.processed_files)
 
         for file in self.current_files.values():
             if not self.is_file_done(file):
-                print(f"Processing file: {file.name}")
+                logger.info(f"Processing file: {file.name}")
                 self.process_file(file)
 
     def scan(self):
@@ -88,8 +92,8 @@ class ConvertedVideoHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         if event.src_path.endswith(".mkv"):
-            # print(f"File '{event.src_path}' has been modified.")
-            # print(self.current_files, self.processed_files)
+            # logger.info(f"File '{event.src_path}' has been modified.")
+            # logger.info(self.current_files, self.processed_files)
             self.scan()
             file = File(Path(event.src_path))
             if not self.is_file_done(file) and self.is_file_ready(file):
@@ -111,7 +115,7 @@ class ConvertedVideoHandler(FileSystemEventHandler):
         ) and mkv.size == current_size:
             return True
 
-        print(f"File '{file.name}' is not ready yet.")
+        logger.info(f"File '{file.name}' is not ready yet.")
 
         return False
 
@@ -138,7 +142,7 @@ class ConvertedVideoHandler(FileSystemEventHandler):
             self.current_files[file.name].mtime = file.get_mtime()
             self.save_processed_files()
         except subprocess.CalledProcessError as e:
-            print(f"Error processing file {file.name}: {e}")
+            logger.info(f"Error processing file {file.name}: {e}")
 
     def load_processed_files(self):
         processed_files = {}
@@ -189,7 +193,7 @@ def main():
             raise e
         raise NotADirectoryError(f"'{path}' is not a directory.")
 
-    print(f"mkvtag is watching directory: {path}")
+    logger.info(f"mkvtag is watching directory: {path}")
 
     event_handler = ConvertedVideoHandler(watch_dir=path)
     observer = Observer()
