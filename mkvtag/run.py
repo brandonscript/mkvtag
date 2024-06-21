@@ -21,7 +21,7 @@ class File:
         self.processed = False
 
     def __repr__(self):
-        return f"File({self.name}, {self.friendly_mtime}, {self.friendly_size})"
+        return f"File({self.name}, {self.friendly_mtime}, {self.friendly_size}, done={self.processed})"
 
     @property
     def name(self):
@@ -107,16 +107,18 @@ class MkvTagger(FileSystemEventHandler):
     def is_file_done(self, file: File):
         current_size = file.get_size()
         if (
-            mkv := self.processed_files.get(file.name, None)
-        ) and mkv.size == current_size:
+            (mkv := self.processed_files.get(file.name, None))
+            and mkv.processed
+            and mkv.size == current_size
+        ):
             return True
 
         return False
 
     def is_file_ready(self, file: File):
 
-        # if file's recently modified time is less than 5 seconds ago, skip
-        if file.get_mtime() > time.time() - 5:
+        # if file's recently modified time is less than 10 seconds ago, skip
+        if file.get_mtime() > time.time() - 10:
             return False
 
         current_size = file.get_size()
@@ -130,6 +132,10 @@ class MkvTagger(FileSystemEventHandler):
         return False
 
     def process_file(self, file: File):
+
+        if file.processed or self._active:
+            return
+
         print(f"Processing file: {file.name}")
         self._active = True
 
@@ -163,6 +169,8 @@ class MkvTagger(FileSystemEventHandler):
         except subprocess.CalledProcessError as e:
             print(f"Error processing file {file.name}: {e}")
 
+        self._active = False
+
     def load_processed_files(self):
         processed_files = {}
         Path(self.log_file).touch(exist_ok=True)
@@ -173,10 +181,14 @@ class MkvTagger(FileSystemEventHandler):
                 if mkv.name in self.current_files
             }
 
+            # mark all processed files as done
+            for mkv in processed_files.values():
+                mkv.processed = True
+
             return processed_files
 
     def save_processed_files(self):
-        with open(self.log_file, "w") as f:
+        with open(self.log_file, "a") as f:
             for mkv in [m for m in self.current_files.values() if m.processed]:
                 f.write(f"{mkv.name},{mkv.mtime},{mkv.size}\n")
 
@@ -194,8 +206,13 @@ def main():
     parser.add_argument(
         "path", nargs="?", default=os.getcwd(), help="Directory to watch"
     )
+    sleep_time = 5 if "pytest" in sys.modules else 60
     parser.add_argument(
-        "-t", "--timer", type=int, default=60, help="Number of seconds to wait/loop"
+        "-t",
+        "--timer",
+        type=int,
+        default=sleep_time,
+        help="Number of seconds to wait/loop",
     )
     args, _ = parser.parse_known_args()
 
