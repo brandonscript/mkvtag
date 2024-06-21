@@ -22,6 +22,7 @@ class File:
         self.path = file_path
         self.mtime = self.get_mtime()
         self.size = self.get_size()
+        self.processed = False
 
     def __repr__(self):
         return f"File({self.name}, {self.friendly_mtime}, {self.friendly_size})"
@@ -139,7 +140,10 @@ class ConvertedVideoHandler(FileSystemEventHandler):
             else:
                 subprocess.run(cmd, check=True)
 
-            self.current_files[file.name].mtime = file.get_mtime()
+            updated = self.current_files[file.name]
+            updated.mtime = file.get_mtime()
+            updated.size = file.get_size()
+            updated.processed = True
             self.save_processed_files()
         except subprocess.CalledProcessError as e:
             logger.info(f"Error processing file {file.name}: {e}")
@@ -158,7 +162,7 @@ class ConvertedVideoHandler(FileSystemEventHandler):
 
     def save_processed_files(self):
         with open(self.log_file, "w") as f:
-            for mkv in self.current_files.values():
+            for mkv in [m for m in self.current_files.values() if m.processed]:
                 f.write(f"{mkv.name},{mkv.mtime},{mkv.size}\n")
 
         self.processed_files = deepcopy(self.current_files)
