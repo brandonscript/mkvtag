@@ -117,7 +117,7 @@ class ConvertedVideoHandler(FileSystemEventHandler):
         ) and mkv.size == current_size:
             return True
 
-        print(f"File '{file.name}' is not ready yet.")
+        # print(f"File '{file.name}' is not ready yet.")
 
         return False
 
