@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -116,21 +117,23 @@ class ConvertedVideoHandler(FileSystemEventHandler):
 
     def process_file(self, file: File):
         try:
-            isatty = sys.stdout.isatty()
-            with subprocess.Popen(
-                [
-                    "mkvpropedit",
-                    "--add-track-statistics-tags",
-                    file.path,
-                ],
-                stdout=subprocess.PIPE if isatty else subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-            ) as p:
-                with os.fdopen(sys.stdout.fileno(), "wb", closefd=False) as stdout:
-
-                    for line in p.stdout:
-                        stdout.write(line)
-                        stdout.flush()
+            cmd: Sequence[str | Path] = [
+                "mkvpropedit",
+                "--add-track-statistics-tags",
+                file.path,
+            ]
+            if sys.stdout.isatty():
+                with subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                ) as p:
+                    with os.fdopen(sys.stdout.fileno(), "wb", closefd=False) as stdout:
+                        for line in p.stdout or []:
+                            stdout.write(line)
+                            stdout.flush()
+            else:
+                subprocess.run(cmd, check=True)
 
             self.current_files[file.name].mtime = file.get_mtime()
             self.save_processed_files()
