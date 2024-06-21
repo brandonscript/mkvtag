@@ -83,7 +83,6 @@ class ConvertedVideoHandler(FileSystemEventHandler):
 
         for file in self.current_files.values():
             if not self.is_file_done(file):
-                print(f"Processing file: {file.name}")
                 self.process_file(file)
 
     def scan(self):
@@ -127,6 +126,8 @@ class ConvertedVideoHandler(FileSystemEventHandler):
         return False
 
     def process_file(self, file: File):
+        print(f"Processing file: {file.name}")
+
         try:
             cmd: Sequence[str | Path] = [
                 "mkvpropedit",
@@ -218,6 +219,9 @@ def main():
             time.sleep(args.timer)
     except KeyboardInterrupt:
         observer.stop()
+        # remove the log file
+        if event_handler.log_file.exists():
+            event_handler.log_file.unlink()
     observer.join()
 
 
