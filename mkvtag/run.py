@@ -171,7 +171,8 @@ class MkvTagger(FileSystemEventHandler):
             updated._processed = True
             self.save_processed_files()
         except subprocess.CalledProcessError as e:
-            print(f"Error processing file {file.name}: {e}")
+            proc_error = e.stderr.decode("utf-8")
+            print(f"Error processing file {file.name}:\n{proc_error}")
 
         self._active = False
 
