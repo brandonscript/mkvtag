@@ -111,6 +111,11 @@ class ConvertedVideoHandler(FileSystemEventHandler):
         return False
 
     def is_file_ready(self, file: File):
+
+        # if file's recently modified time is less than 5 seconds ago, skip
+        if file.get_mtime() > time.time() - 5:
+            return False
+
         current_size = file.get_size()
         if (
             mkv := self.current_files.get(file.name, None)
