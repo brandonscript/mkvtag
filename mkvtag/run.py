@@ -64,9 +64,10 @@ class File:
         return self.name == other.name
 
 
-class ConvertedVideoHandler(FileSystemEventHandler):
+class MkvTagger(FileSystemEventHandler):
     current_files: dict[str, File]
     processed_files: dict[str, File]
+    _active = False
 
     def __init__(self, watch_dir: Path = Path.cwd()):
         self.watch_dir = watch_dir
@@ -81,15 +82,18 @@ class ConvertedVideoHandler(FileSystemEventHandler):
         self.scan()
         # print(self.current_files, self.processed_files)
 
-        for file in self.current_files.values():
-            if not self.is_file_done(file):
-                self.process_file(file)
+        self.process_dir()
 
     def scan(self):
         self.current_files = {
             f.name: File(f) for f in Path(self.watch_dir).glob("*.mkv")
         }
         self.processed_files = self.load_processed_files()
+
+    def process_dir(self):
+        for file in self.current_files.values():
+            if not self.is_file_done(file) and self.is_file_ready(file):
+                self.process_file(file)
 
     def on_modified(self, event):
         if event.src_path.endswith(".mkv"):
@@ -127,6 +131,7 @@ class ConvertedVideoHandler(FileSystemEventHandler):
 
     def process_file(self, file: File):
         print(f"Processing file: {file.name}")
+        self._active = True
 
         try:
             cmd: Sequence[str | Path] = [
@@ -190,7 +195,7 @@ def main():
         "path", nargs="?", default=os.getcwd(), help="Directory to watch"
     )
     parser.add_argument(
-        "-t", "--timer", type=int, default=10, help="Number of seconds to wait/loop"
+        "-t", "--timer", type=int, default=60, help="Number of seconds to wait/loop"
     )
     args, _ = parser.parse_known_args()
 
@@ -209,19 +214,21 @@ def main():
 
     print(f"mkvtag is watching directory: {path}")
 
-    event_handler = ConvertedVideoHandler(watch_dir=path)
+    tagger = MkvTagger(watch_dir=path)
     observer = Observer()
-    observer.schedule(event_handler, path, recursive=False)
+    observer.schedule(tagger, path, recursive=False)
     observer.start()
 
     try:
         while True:
             time.sleep(args.timer)
+            tagger.process_dir()
+
     except KeyboardInterrupt:
         observer.stop()
         # remove the log file
-        if event_handler.log_file.exists():
-            event_handler.log_file.unlink()
+        if tagger.log_file.exists():
+            tagger.log_file.unlink()
     observer.join()
 
 
