@@ -4,7 +4,6 @@ import subprocess
 import sys
 import time
 from collections.abc import Sequence
-from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -18,7 +17,7 @@ class File:
         self.path = file_path
         self.mtime = self.get_mtime()
         self.size = self.get_size()
-        self.processed = False
+        self._processed = False
 
     def __repr__(self):
         return f"File({self.name}, {self.friendly_mtime}, {self.friendly_size}, done={self.processed})"
@@ -51,6 +50,13 @@ class File:
             return Path(self.path).stat().st_size
         except FileNotFoundError:
             return 0
+
+    @property
+    def processed(self):
+        if self._processed:
+            return True
+        self._processed = is_processed(self, self.path.parent)
+        return self._processed
 
     @classmethod
     def from_csv(cls, line: str, watch_dir: Path):
@@ -85,10 +91,8 @@ class MkvTagger(FileSystemEventHandler):
         self.process_dir()
 
     def scan(self):
-        self.current_files = {
-            f.name: File(f) for f in Path(self.watch_dir).glob("*.mkv")
-        }
-        self.processed_files = self.load_processed_files()
+        self.current_files = scan_watch_dir(self.watch_dir)
+        self.processed_files = load_processed_files(self.watch_dir)
 
     def process_dir(self):
         for file in self.current_files.values():
@@ -164,35 +168,54 @@ class MkvTagger(FileSystemEventHandler):
             updated = self.current_files[file.name]
             updated.mtime = file.get_mtime()
             updated.size = file.get_size()
-            updated.processed = True
+            updated._processed = True
             self.save_processed_files()
         except subprocess.CalledProcessError as e:
             print(f"Error processing file {file.name}: {e}")
 
         self._active = False
 
-    def load_processed_files(self):
-        processed_files = {}
-        Path(self.log_file).touch(exist_ok=True)
-        with open(self.log_file, "r") as f:
-            processed_files = {
-                mkv.name: mkv
-                for mkv in [(File.from_csv(line, self.watch_dir)) for line in f]
-                if mkv.name in self.current_files
-            }
-
-            # mark all processed files as done
-            for mkv in processed_files.values():
-                mkv.processed = True
-
-            return processed_files
-
     def save_processed_files(self):
+        new_processed_files = {
+            mkv.name: mkv
+            for mkv in self.current_files.values()
+            if mkv.processed and not mkv.name in self.processed_files.keys()
+        }
         with open(self.log_file, "a") as f:
-            for mkv in [m for m in self.current_files.values() if m.processed]:
+            for mkv in new_processed_files.values():
+                # skip if file is already in the log file
+                if mkv.name in load_processed_files(self.watch_dir).keys():
+                    continue
                 f.write(f"{mkv.name},{mkv.mtime},{mkv.size}\n")
 
-        self.processed_files = deepcopy(self.current_files)
+        self.processed_files = new_processed_files
+
+
+def scan_watch_dir(watch_dir: Path):
+    return {f.name: File(f) for f in Path(watch_dir).glob("*.mkv")}
+
+
+def load_processed_files(watch_dir: Path):
+    log_file = watch_dir / "processed_files.txt"
+    processed_files = {}
+    Path(log_file).touch(exist_ok=True)
+    with open(log_file, "r") as f:
+        processed_files = {
+            mkv.name: mkv
+            for mkv in [(File.from_csv(line, watch_dir)) for line in f]
+            if mkv.name in scan_watch_dir(watch_dir).keys()
+        }
+
+        # mark all processed files as done
+        for mkv in processed_files.values():
+            mkv._processed = True
+
+        return processed_files
+
+
+def is_processed(file: File, watch_dir: Path):
+    processed_files = load_processed_files(watch_dir)
+    return bool(processed_files.get(file.name, None))
 
 
 def main():
@@ -213,6 +236,13 @@ def main():
         type=int,
         default=sleep_time,
         help="Number of seconds to wait/loop",
+    )
+    parser.add_argument(
+        "-l",
+        "--loops",
+        type=int,
+        default=-1,
+        help="Number of loops to run before exiting (default: -1 to run indefinitely)",
     )
     args, _ = parser.parse_known_args()
 
@@ -236,8 +266,10 @@ def main():
     observer.schedule(tagger, path, recursive=False)
     observer.start()
 
+    counter = 0
     try:
-        while True:
+        while args.loops < 0 or counter < args.loops:
+            counter += 1
             time.sleep(args.timer)
             tagger.process_dir()
 

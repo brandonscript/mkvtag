@@ -27,6 +27,7 @@
     "peacock.color": "#29352f",
     "editor.formatOnSave": true,
     "editor.formatOnSaveMode": "modificationsIfAvailable",
+    "python.analysis.typeCheckingMode": "standard",
     "[python]": {
       "editor.formatOnSave": true,
       "editor.formatOnPaste": false,
