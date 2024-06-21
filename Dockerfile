@@ -29,4 +29,4 @@ RUN pip install --no-cache-dir poetry
 RUN poetry install
 
 # Run the script when the container launches
-CMD ["poetry", "run", "mkvtag", "/watchdir"]
+CMD ["python", "-u", "-m", "poetry", "run", "mkvtag", "/watchdir"]
