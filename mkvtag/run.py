@@ -71,6 +71,11 @@ class ConvertedVideoHandler(FileSystemEventHandler):
     def __init__(self, watch_dir: Path = Path.cwd()):
         self.watch_dir = watch_dir
         self.log_file = self.watch_dir / "processed_files.txt"
+
+        if self.log_file.exists():
+            self.log_file.unlink()
+            self.log_file.touch()
+
         print("Watching for new files...\n")
 
         self.scan()
