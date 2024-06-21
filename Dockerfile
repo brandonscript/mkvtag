@@ -25,7 +25,7 @@ RUN apt-get update && \
 COPY . .
 
 # Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir poetry
+RUN pip install poetry
 RUN poetry install
 
 # Run the script when the container launches

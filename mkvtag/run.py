@@ -147,7 +147,7 @@ class ConvertedVideoHandler(FileSystemEventHandler):
                 res = subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
                 if res.returncode != 0:
                     raise subprocess.CalledProcessError(res.returncode, res.args)
-                print(f"Done")
+                print(f"Done\n")
 
             updated = self.current_files[file.name]
             updated.mtime = file.get_mtime()
