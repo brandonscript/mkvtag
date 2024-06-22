@@ -11,6 +11,8 @@ from humanize import naturaltime
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+SLEEP_TIME = 5 if "pytest" in sys.modules else 30
+
 
 class File:
     def __init__(self, file_path: Path):
@@ -103,7 +105,7 @@ class MkvTagger(FileSystemEventHandler):
         if event.src_path.endswith(".mkv"):
             # print(f"File '{event.src_path}' has been modified.")
             # print(self.current_files, self.processed_files)
-            self.scan()
+            # self.scan()
             file = File(Path(event.src_path))
             if not self.is_file_done(file) and self.is_file_ready(file):
                 self.process_file(file)
@@ -121,8 +123,8 @@ class MkvTagger(FileSystemEventHandler):
 
     def is_file_ready(self, file: File):
 
-        # if file's recently modified time is less than 10 seconds ago, skip
-        if file.get_mtime() > time.time() - 10:
+        # if file is recently modified, skip
+        if file.get_mtime() > time.time() - SLEEP_TIME:
             return False
 
         current_size = file.get_size()
@@ -230,12 +232,12 @@ def main():
     parser.add_argument(
         "path", nargs="?", default=os.getcwd(), help="Directory to watch"
     )
-    sleep_time = 5 if "pytest" in sys.modules else 60
+
     parser.add_argument(
         "-t",
         "--timer",
         type=int,
-        default=sleep_time,
+        default=SLEEP_TIME,
         help="Number of seconds to wait/loop",
     )
     parser.add_argument(
