@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from deepdiff import DeepDiff
-from humanize import naturaltime
+from humanize import naturalsize, naturaltime
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -53,6 +53,10 @@ class File:
         """Use humanized time format from 'humanize' package"""
 
         return naturaltime(datetime.now() - datetime.fromtimestamp(self._mtime))
+
+    @property
+    def size_changed_since_last_check(self):
+        return self._last_size != self.size
 
     @property
     def was_recently_modified(self):
@@ -230,8 +234,10 @@ class MkvTagger(FileSystemEventHandler):
             # unless the status is "done" or "gone"
             if reset:
                 for file in merged.values():
-                    if file.status not in ["done", "gone", "failed", "waiting"]:
-                        self.set_status(file, "new")
+                    if file.status not in ["done", "gone"]:
+                        # if mtime is older than 1 minute, set status to "new"
+                        if time.time() - file.mtime > 60:
+                            self.set_status(file, "new")
 
             return merged
 
@@ -246,23 +252,39 @@ class MkvTagger(FileSystemEventHandler):
         if self._is_processing or self.is_active_file(file):
             return
 
-        if file.was_recently_modified:
+        if file.was_recently_modified or file.size_changed_since_last_check:
             if file.status == "waiting":
                 return
+
             self.set_status(file, "waiting")
-            time_since_modified_friendly = naturaltime(
-                datetime.now() - datetime.fromtimestamp(file.mtime)
-            )
-            if time_since_modified_friendly == "now":
-                time_since_modified_friendly = "a second ago"
-            print(
-                f"File '{file.name}' was modified {time_since_modified_friendly}, skipping for now...",
-                file.__dict__,
-            )
-            time.sleep(SLEEP_TIME)
-            if file.was_recently_modified:
-                self.set_status(file, "waiting")
-                return
+
+            if file.size_changed_since_last_check:
+                size_diff = file.size - file._last_size
+                friendly_size_diff = naturalsize(size_diff)
+                if size_diff > 0:
+                    print(
+                        f"File '{file.name}' has changed size by {friendly_size_diff}, skipping for now...",
+                        file.__dict__,
+                    )
+                time.sleep(SLEEP_TIME)
+                if file.size_changed_since_last_check:
+                    file.save_to_log(self.log_file)
+                    return
+
+            else:
+                time_since_modified_friendly = naturaltime(
+                    datetime.now() - datetime.fromtimestamp(file.mtime)
+                )
+                if time_since_modified_friendly == "now":
+                    time_since_modified_friendly = "a second ago"
+                print(
+                    f"File '{file.name}' was last modified {time_since_modified_friendly}, skipping for now...",
+                    file.__dict__,
+                )
+                time.sleep(SLEEP_TIME)
+                if file.was_recently_modified:
+                    file.save_to_log(self.log_file)
+                    return
 
         if file.status == "failed":
             print(f"File '{file.name}' failed to process, retrying...")
