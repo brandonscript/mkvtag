@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Sequence
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -47,11 +48,13 @@ class File:
             self._mtime = Path(self.path).stat().st_mtime
             return self._mtime
         except FileNotFoundError:
-            return 0.0
+            return self._mtime or self._last_mtime or 0.0
 
     @property
     def friendly_mtime(self):
-        return naturaltime(datetime.now() - datetime.fromtimestamp(self._mtime))
+        return naturaltime(
+            datetime.now() - datetime.fromtimestamp(self._mtime or self._last_mtime)
+        )
 
     @property
     def size_changed_since_last_check(self):
@@ -69,13 +72,13 @@ class File:
             self._size = Path(self.path).stat().st_size
             return self._size
         except FileNotFoundError:
-            return 0
+            return self._size or self._last_size or 0
 
     @property
     def friendly_size(self):
         from humanize import naturalsize
 
-        return naturalsize(self._size or 0)
+        return naturalsize(self._size or self._last_size or 0)
 
     @property
     def status(self) -> Status:
@@ -94,7 +97,7 @@ class File:
         self._failed_count += 1 if value == "failed" else 0
         self._status = value
         self._tagger.files[self.name] = self
-        self.save_to_log(self._tagger.log_file)
+        self.save_to_log()
 
     @property
     def failed_count(self):
@@ -104,7 +107,7 @@ class File:
         self._failed_count += 1
         self._status = "failed"
         self._tagger.files[self.name] = self
-        self.save_to_log(self._tagger.log_file)
+        self.save_to_log()
 
     @classmethod
     def from_json(cls, data: dict, *, tagger: "MkvTagger"):
@@ -132,11 +135,12 @@ class File:
             "status": self._status,
         }
 
-    def save_to_log(self, log_file: Path):
-        files = {f.name: f.to_json() for f in self._tagger.files.values()}
-        with open(log_file, "w") as f:
-            # update the log file if the file already exists, otherwise append
-            json.dump(files, f, indent=4)
+    def save_to_log(self):
+        logged_files = deepcopy(self._tagger.logged_files)
+        # update the file in the logged files or add it if it doesn't exist
+        logged_files[self.name] = self
+        with open(self._tagger.log_file, "w") as f:
+            json.dump({f.name: f.to_json() for f in logged_files.values()}, f, indent=2)
 
     def __eq__(self, other):
         return self.name == other.name
@@ -190,13 +194,13 @@ class MkvTagger(FileSystemEventHandler):
     def is_active_file(self, file: File):
         return file.name == self._active_file
 
-    def scan(self, reset: bool = False) -> dict[str, "File"]:
+    @property
+    def logged_files(self) -> dict[str, File]:
         log_file = self.watch_dir / LOG_FILE_NAME
         logged_files = {}
-        dir_files = {f.name: File(f, self) for f in Path(self.watch_dir).glob("*.mkv")}
         if not log_file.exists():
             with open(log_file, "w") as f:
-                json.dump({}, f, indent=4)
+                json.dump({}, f, indent=2)
         with open(log_file, "r") as f:
             try:
                 file_data = json.load(f)
@@ -205,42 +209,49 @@ class MkvTagger(FileSystemEventHandler):
                     raise json.JSONDecodeError(
                         "Invalid JSON data, expected an object.", "", 0
                     )
-            except json.JSONDecodeError:
-                print("Error decoding JSON data from log file, resetting log file.\n")
-                file_data = {}
-                # save empty list to log file
-                with open(log_file, "w") as f:
-                    json.dump({}, f, indent=4)
+            except json.JSONDecodeError as e:
+                raise json.JSONDecodeError(
+                    f"Error decoding JSON data from log file - delete {log_file} or ensure it contains a valid JSON object ('{{}}').",
+                    e.doc,
+                    e.pos,
+                ) from e
 
             logged_files = {
-                item["name"]: File.from_json(
-                    item, tagger=self
-                )  # Assuming a new method `from_json`
+                item["name"]: File.from_json(item, tagger=self)
                 for item in file_data.values()
             }
 
-            # update the status of files that are no longer in the directory
-            for name, file in logged_files.items():
-                if name not in dir_files.keys():
-                    file._status = "gone"
+        return logged_files
 
-            # add new files from dir_files to logged_files
-            new_files = {
-                name: file
-                for name, file in dir_files.items()
-                if name not in logged_files.keys()
-            }
+    def scan(self, reset: bool = False) -> dict[str, "File"]:
+        dir_files = {f.name: File(f, self) for f in Path(self.watch_dir).glob("*.mkv")}
 
-            merged = {**logged_files, **new_files}
+        # add new files from dir_files to logged_files
+        new_files = {
+            name: file
+            for name, file in dir_files.items()
+            if name not in self.logged_files.keys()
+        }
 
-            if reset:
-                for file in merged.values():
-                    if file.status not in ["done", "gone"]:
-                        # if mtime is older than 1 minute, set status to "new"
-                        if time.time() - file.mtime > 60 and file.failed_count < 3:
-                            file._status = "new"
+        merged = {**self.logged_files, **new_files}
 
-            return merged
+        # set files that don't exist in the directory to "gone"
+        for name, file in merged.items():
+            if name not in dir_files.keys():
+                file._status = "gone"
+
+        if reset:
+            for file in merged.values():
+                if file.status not in ["done", "gone"] and file.path.exists():
+                    # if mtime is older than 1 minute, set status to "new"
+                    if time.time() - file.mtime > 60 and file.failed_count < 3:
+                        file._status = "new"
+
+        with open(self.log_file, "w") as f:
+            # update the log file if the file already exists, otherwise append
+            # merge the logged files with the new files
+            json.dump({f.name: f.to_json() for f in merged.values()}, f, indent=2)
+        return merged
 
     def process_file(self, file: File):
 
@@ -271,7 +282,7 @@ class MkvTagger(FileSystemEventHandler):
                     )
                 time.sleep(SLEEP_TIME)
                 if file.size_changed_since_last_check:
-                    file.save_to_log(self.log_file)
+                    file.save_to_log()
                     return
 
             else:
@@ -285,7 +296,7 @@ class MkvTagger(FileSystemEventHandler):
                 )
                 time.sleep(SLEEP_TIME)
                 if file.was_recently_modified:
-                    file.save_to_log(self.log_file)
+                    file.save_to_log()
                     return
 
         if file.status == "failed":
