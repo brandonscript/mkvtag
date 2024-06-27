@@ -51,8 +51,6 @@ class File:
 
     @property
     def friendly_mtime(self):
-        """Use humanized time format from 'humanize' package"""
-
         return naturaltime(datetime.now() - datetime.fromtimestamp(self._mtime))
 
     @property
@@ -75,7 +73,6 @@ class File:
 
     @property
     def friendly_size(self):
-        """Use humanized size format from 'humanize' package"""
         from humanize import naturalsize
 
         return naturalsize(self._size or 0)
@@ -175,7 +172,6 @@ class MkvTagger(FileSystemEventHandler):
 
         if LOG_FILE_NAME in event.src_path:
             # update the files list if the log file is modified
-
             # if log file matches self.files, skip
             if not DeepDiff(self.files, self.scan(), ignore_order=True):
                 return
@@ -183,9 +179,6 @@ class MkvTagger(FileSystemEventHandler):
             self.files.update(self.scan())
 
         if event.src_path.endswith(".mkv"):
-            # print(f"File '{event.src_path}' has been modified.")
-            # print(self.current_files, self.processed_files)
-            # self.scan()
             path = Path(event.src_path)
             # try to get file from self.files
             if not (file := self.files.get(path.name)):
@@ -202,13 +195,11 @@ class MkvTagger(FileSystemEventHandler):
         logged_files = {}
         dir_files = {f.name: File(f, self) for f in Path(self.watch_dir).glob("*.mkv")}
         if not log_file.exists():
-            # write {} to log file
             with open(log_file, "w") as f:
                 json.dump({}, f, indent=4)
         with open(log_file, "r") as f:
-            # Step 2: Load JSON data
             try:
-                file_data = json.load(f)  # Assuming file_data is a list of dicts
+                file_data = json.load(f)
                 # if file data is not an object, raise
                 if not isinstance(file_data, dict):
                     raise json.JSONDecodeError(
@@ -221,7 +212,6 @@ class MkvTagger(FileSystemEventHandler):
                 with open(log_file, "w") as f:
                     json.dump({}, f, indent=4)
 
-            # Step 3 & 4: Process each item in the list
             logged_files = {
                 item["name"]: File.from_json(
                     item, tagger=self
@@ -229,12 +219,12 @@ class MkvTagger(FileSystemEventHandler):
                 for item in file_data.values()
             }
 
-            # Update the status of files that are no longer in the directory
+            # update the status of files that are no longer in the directory
             for name, file in logged_files.items():
                 if name not in dir_files.keys():
                     file._status = "gone"
 
-            # Add new files from dir_files to logged_files
+            # add new files from dir_files to logged_files
             new_files = {
                 name: file
                 for name, file in dir_files.items()
@@ -243,8 +233,6 @@ class MkvTagger(FileSystemEventHandler):
 
             merged = {**logged_files, **new_files}
 
-            # If reset is true, reset the status on all files
-            # unless the status is "done" or "gone"
             if reset:
                 for file in merged.values():
                     if file.status not in ["done", "gone"]:
@@ -255,9 +243,6 @@ class MkvTagger(FileSystemEventHandler):
             return merged
 
     def process_file(self, file: File):
-
-        if file.name.startswith("28"):
-            ...
 
         if file.status in ["done", "gone"]:
             return
@@ -279,11 +264,10 @@ class MkvTagger(FileSystemEventHandler):
 
             if file.size_changed_since_last_check:
                 size_diff = file.size - file._last_size
-                friendly_size_diff = naturalsize(size_diff)
+                friendly_size_diff = naturalsize(abs(size_diff))
                 if size_diff > 0:
                     print(
-                        f"File '{file.name}' has changed size by {friendly_size_diff}, skipping for now...",
-                        file.__dict__,
+                        f"File '{file.name}' has changed size by {friendly_size_diff}, skipping for now..."
                     )
                 time.sleep(SLEEP_TIME)
                 if file.size_changed_since_last_check:
@@ -297,8 +281,7 @@ class MkvTagger(FileSystemEventHandler):
                 if time_since_modified_friendly == "now":
                     time_since_modified_friendly = "a second ago"
                 print(
-                    f"File '{file.name}' was last modified {time_since_modified_friendly}, skipping for now...",
-                    file.__dict__,
+                    f"File '{file.name}' was last modified {time_since_modified_friendly}, skipping for now..."
                 )
                 time.sleep(SLEEP_TIME)
                 if file.was_recently_modified:
@@ -345,9 +328,12 @@ class MkvTagger(FileSystemEventHandler):
                 file.status = "done"
 
         except subprocess.CalledProcessError as e:
-            proc_error = e.stderr.decode("utf-8") if e and e.stderr else ""
-            print(f"Error processing file {file.name}:")
-            print(proc_error)
+            msg = f"Error processing file: {file.name}"
+            if proc_error := (e.stderr.decode("utf-8") if e and e.stderr else ""):
+                print(f"{msg}:")
+                print(proc_error)
+            else:
+                print(f"{msg}\n")
             file.fail()
         finally:
             self._is_processing = False
