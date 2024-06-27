@@ -24,11 +24,12 @@ Status = Literal["new", "done", "processing", "waiting", "failed", "gone"]
 class File:
     def __init__(self, file_path: Path, tagger: "MkvTagger"):
         self.path = file_path
-        self._last_mtime = 0.0
-        self._mtime = 0.0
-        self._last_size = 0
-        self._size = 0
+        self._mtime = file_path.stat().st_mtime if file_path.exists() else 0.0
+        self._last_mtime = self._mtime
+        self._size = file_path.stat().st_size if file_path.exists() else 0
+        self._last_size = self._size
         self._status: Status = "new"
+        self._failed_count = 0
         self._tagger = tagger
 
     def __repr__(self):
@@ -85,12 +86,28 @@ class File:
             return self._status
         self._tagger.scan()
         if not (ref := self._tagger.files.get(self.name)):
-            self._tagger.set_status(self, "gone")
             self._status = "gone"
             return self._status
 
         self._status = ref.status
         return self._status
+
+    @status.setter
+    def status(self, value: Status):
+        self._failed_count += 1 if value == "failed" else 0
+        self._status = value
+        self._tagger.files[self.name] = self
+        self.save_to_log(self._tagger.log_file)
+
+    @property
+    def failed_count(self):
+        return self._failed_count
+
+    def fail(self):
+        self._failed_count += 1
+        self._status = "failed"
+        self._tagger.files[self.name] = self
+        self.save_to_log(self._tagger.log_file)
 
     @classmethod
     def from_json(cls, data: dict, *, tagger: "MkvTagger"):
@@ -105,6 +122,7 @@ class File:
         new._mtime = mtime
         new._last_size = data["size"]
         new._size = data["size"]
+        new._failed_count = int(data.get("failed_count", 0))
         new._status = data["status"]
         return new
 
@@ -113,17 +131,15 @@ class File:
             "name": self.name,
             "mtime": datetime.fromtimestamp(self.mtime).isoformat(),
             "size": self.size,
+            "failed_count": self._failed_count,
             "status": self._status,
         }
 
-    def save_to_log(self, log_file: Path, *, update_status: Status | None = None):
-        if update_status:
-            self._status = update_status
-        known_files = self._tagger.scan()
-        known_files[self.name] = self
+    def save_to_log(self, log_file: Path):
+        files = {f.name: f.to_json() for f in self._tagger.files.values()}
         with open(log_file, "w") as f:
             # update the log file if the file already exists, otherwise append
-            json.dump({f.name: f.to_json() for f in known_files.values()}, f, indent=4)
+            json.dump(files, f, indent=4)
 
     def __eq__(self, other):
         return self.name == other.name
@@ -170,19 +186,16 @@ class MkvTagger(FileSystemEventHandler):
             # print(f"File '{event.src_path}' has been modified.")
             # print(self.current_files, self.processed_files)
             # self.scan()
-            file = File(Path(event.src_path), self)
+            path = Path(event.src_path)
+            # try to get file from self.files
+            if not (file := self.files.get(path.name)):
+                # if file is not in self.files, add it
+                file = File(path, self)
+                self.files[file.name] = file
             self.process_file(file)
 
     def is_active_file(self, file: File):
         return file.name == self._active_file
-
-    def set_status(self, file: File, status: Status):
-        # if file is not in self.files, add it
-        if file.name not in self.files:
-            self.files[file.name] = file
-        file._status = status
-        self.files[file.name]._status = status
-        file.save_to_log(self.log_file, update_status=status)
 
     def scan(self, reset: bool = False) -> dict[str, "File"]:
         log_file = self.watch_dir / LOG_FILE_NAME
@@ -219,7 +232,7 @@ class MkvTagger(FileSystemEventHandler):
             # Update the status of files that are no longer in the directory
             for name, file in logged_files.items():
                 if name not in dir_files.keys():
-                    self.set_status(file, "gone")
+                    file._status = "gone"
 
             # Add new files from dir_files to logged_files
             new_files = {
@@ -236,8 +249,8 @@ class MkvTagger(FileSystemEventHandler):
                 for file in merged.values():
                     if file.status not in ["done", "gone"]:
                         # if mtime is older than 1 minute, set status to "new"
-                        if time.time() - file.mtime > 60:
-                            self.set_status(file, "new")
+                        if time.time() - file.mtime > 60 and file.failed_count < 3:
+                            file._status = "new"
 
             return merged
 
@@ -252,11 +265,17 @@ class MkvTagger(FileSystemEventHandler):
         if self._is_processing or self.is_active_file(file):
             return
 
+        if file.status == "failed" and file.failed_count >= 3:
+            if file.failed_count == 3:
+                print(f"File '{file.name}' has already failed 3 times, giving up :(")
+                file.fail()
+            return
+
         if file.was_recently_modified or file.size_changed_since_last_check:
             if file.status == "waiting":
                 return
 
-            self.set_status(file, "waiting")
+            file.status = "waiting"
 
             if file.size_changed_since_last_check:
                 size_diff = file.size - file._last_size
@@ -288,14 +307,19 @@ class MkvTagger(FileSystemEventHandler):
 
         if file.status == "failed":
             print(f"File '{file.name}' failed to process, retrying...")
-            self.set_status(file, "new")
+            file.status = "new"
 
         print(f"Processing file: {file.name}")
         self._is_processing = True
         self._active_file = file.name
-        self.set_status(file, "processing")
+        file.status = "processing"
 
         try:
+            if file.name == "sample_1280x720_failed.mkv":
+                raise subprocess.CalledProcessError(
+                    1,
+                    "mkvpropedit --add-track-statistics-tags [test] failure (intentional)",
+                )
             cmd: Sequence[str | Path] = [
                 "mkvpropedit",
                 "--add-track-statistics-tags",
@@ -318,13 +342,13 @@ class MkvTagger(FileSystemEventHandler):
                 if res.returncode != 0:
                     raise subprocess.CalledProcessError(res.returncode, res.args)
                 print(f"Done\n")
-                self.set_status(file, "done")
+                file.status = "done"
 
         except subprocess.CalledProcessError as e:
             proc_error = e.stderr.decode("utf-8") if e and e.stderr else ""
             print(f"Error processing file {file.name}:")
             print(proc_error)
-            self.set_status(file, "failed")
+            file.fail()
         finally:
             self._is_processing = False
             self._active_file = None
