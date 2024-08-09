@@ -1,8 +1,11 @@
 # Use an official Python runtime as a parent image
-FROM python:3.12-slim
+FROM python:3.12-slim AS base
+ENV VENV_PATH=/mkvtag/.venv \
+  POETRY_PATH=/usr/local/bin
+
 
 # Set the working directory in the container
-WORKDIR /usr/src/app
+WORKDIR /mkvtag
 
 # Install system dependencies
 RUN apt-get update && \
@@ -21,13 +24,27 @@ RUN apt-get update && \
   apt-get install -y mkvtoolnix && \
   rm -rf /var/lib/apt/lists/*
 
-RUN pip install poetry
+FROM base as poetry
 
-# Copy the current directory contents into the container at /usr/src/app
-COPY . .
+ENV PATH="$POETRY_PATH/bin:$VENV_PATH/bin:$PATH"
 
-# Install any needed packages specified in requirements.txt
-RUN poetry install
+# Install poetry
+RUN curl -sSL https://install.python-poetry.org | python - \
+  && mv /root/.local/bin $POETRY_PATH \
+  && poetry --version \
+  && python -m venv $VENV_PATH \
+  && poetry config virtualenvs.in-project true \
+  && poetry config virtualenvs.create false
+
+COPY poetry.lock pyproject.toml README.md ./
+COPY ./mkvtag ./mkvtag
+
+RUN poetry install --no-interaction
+
+FROM poetry as app
+WORKDIR /mkvtag
+
+COPY --from=poetry $VENV_PATH $VENV_PATH
 
 # Run the script when the container launches
 ENV PYTHONUNBUFFERED=1
