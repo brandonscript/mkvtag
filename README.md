@@ -65,26 +65,42 @@ Matrix coefficients                      : BT.709
 
     With the provided script: 
 
-    ```
+    ```sh
     ./docker_build.sh "<path-to-your-converted-dir>"
+    # or with options
+    ./docker_build.sh "<path-to-your-converted-dir>" --timer=30 --loops=-1 --clean=".*\.(remove|text)"
     ```
 
     or manually: 
 
-    ```
+    ```sh
     docker build -t mkvtag .
     docker run -v "<your-converted-dir>":/watchdir \
+    # --env MKVTAG_TIMER=30 ... \
       --restart unless-stopped \ 
-      --name mkvtag -d mkvtag
+      --name mkvtag -d mkvtag \
     ```
 
 3. That's it! The container will now watch the directory you specified for new files and automatically add the track statistics tags to them. To check the logs, run: 
 
-    ```
+    ```sh
     docker logs -f mkvtag
     ```
 
     You can also inspect the `mkvtag.json` file in the directory you specified to see the status of the files that have been processed.
+
+## Options
+
+- `--log=./path/to/logfile.log`: Specify a custom log file path. Default is `./watchdir/mkvtag.log`.
+- `-t, --timer=30`: Specify the number of seconds to wait before checking for new files. Default is `30`.
+- `-l, --loops=-1`: Specify the number of loops to run before exiting. Default is `-1` (infinite).
+- `-x, --clean [._]*(remove|text)`: Specify a regex pattern to remove from the filename. Default is empty (no cleaning). Useful for removing unwanted text from filenames after conversion.
+
+Env variables can also be used to set these options:
+- `MKVTAG_LOGFILE`: Custom log file path.
+- `MKVTAG_TIMER`: Number of seconds to wait before checking for new files.
+- `MKVTAG_LOOPS`: Number of loops to run before exiting.
+- `MKVTAG_CLEAN`: Regex pattern to remove from the filename.
 
 ## License
 

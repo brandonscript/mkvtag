@@ -21,11 +21,12 @@ RUN apt-get update && \
   apt-get install -y mkvtoolnix && \
   rm -rf /var/lib/apt/lists/*
 
+RUN pip install poetry
+
 # Copy the current directory contents into the container at /usr/src/app
 COPY . .
 
 # Install any needed packages specified in requirements.txt
-RUN pip install poetry
 RUN poetry install
 
 # Run the script when the container launches
