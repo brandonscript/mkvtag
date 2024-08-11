@@ -36,6 +36,11 @@ class MkvTagger(FileSystemEventHandler):
                 else (log_file if log_file.is_absolute() else Path.cwd() / log_file)
             )
         )
+        # if log file does not exist, or if it is empty, write an empty object
+        if self.log_file_empty_or_missing:
+            with open(self.log_file, "w") as f:
+                f.write("{}")
+
         self.rename_exp = rename_exp
 
         self.files = {}
@@ -80,18 +85,28 @@ class MkvTagger(FileSystemEventHandler):
         return file.name == self._active_file
 
     @property
+    def log_file_empty_or_missing(self) -> bool:
+        return (
+            not self.log_file.exists()
+            or self.log_file.stat().st_size == 0
+            or self.log_file.read_text().strip() == ""
+        )
+
+    @property
     def logged_files(self) -> dict[str, File]:
         logged_files = {}
-        if not self.log_file.exists():
+        if self.log_file_empty_or_missing:
             with open(self.log_file, "w") as f:
-                json.dump({}, f, indent=2)
+                f.write("{}")
         with open(self.log_file, "r") as f:
             try:
                 file_data = json.load(f)
                 # if file data is not an object, raise
                 if not isinstance(file_data, dict):
                     raise json.JSONDecodeError(
-                        "Invalid JSON data, expected an object.", "", 0
+                        f"Invalid JSON data in {self.log_file} – expected an object.",
+                        "",
+                        0,
                     )
             except json.JSONDecodeError as e:
                 raise json.JSONDecodeError(
