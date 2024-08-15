@@ -15,10 +15,25 @@ from mkvtag.constants import LOG_FILE_NAME, SLEEP_TIME
 from mkvtag.file import File
 
 
+def handle_json_error(
+    msg: str, err: Exception | json.JSONDecodeError, tagger: "MkvTagger"
+):
+    tagger._error_state = True
+    print(msg)
+    if isinstance(err, json.JSONDecodeError):
+        print(f"Error: {err.msg}")
+        print(f"Line: {err.lineno}, Column: {err.colno}")
+        print(f"Position: {err.pos}")
+        print(f"Doc: {err.doc}")
+    time.sleep(10)
+    tagger._error_state = False
+
+
 class MkvTagger(FileSystemEventHandler):
     files: dict[str, File]
     _is_processing = False
     _active_file: str | None = None
+    _error_state = False
 
     def __init__(
         self,
@@ -38,6 +53,7 @@ class MkvTagger(FileSystemEventHandler):
         )
         # if log file does not exist, or if it is empty, write an empty object
         if self.log_file_empty_or_missing:
+            print(f"Creating log file '{self.log_file}'")
             with open(self.log_file, "w") as f:
                 f.write("{}")
 
@@ -58,6 +74,8 @@ class MkvTagger(FileSystemEventHandler):
         self.process_dir()
 
     def process_dir(self):
+        if self._error_state:
+            return
         for file in self.files.values():
             self.process_file(file)
 
@@ -94,8 +112,13 @@ class MkvTagger(FileSystemEventHandler):
 
     @property
     def logged_files(self) -> dict[str, File]:
-        logged_files = {}
+        logged_files: dict[str, File] = {}
+        if self._error_state:
+            return logged_files
         if self.log_file_empty_or_missing:
+            print(
+                f"Log file '{self.log_file}' is empty or missing, creating a new one."
+            )
             with open(self.log_file, "w") as f:
                 f.write("{}")
         with open(self.log_file, "r") as f:
@@ -109,11 +132,12 @@ class MkvTagger(FileSystemEventHandler):
                         0,
                     )
             except json.JSONDecodeError as e:
-                raise json.JSONDecodeError(
+                handle_json_error(
                     f"Error decoding JSON data from log file - delete {self.log_file} or ensure it contains a valid JSON object ('{{}}').",
-                    e.doc,
-                    e.pos,
-                ) from e
+                    e,
+                    self,
+                )
+                return {}
 
             logged_files = {
                 item["name"]: File.from_json(item, tagger=self, **item)
@@ -126,6 +150,9 @@ class MkvTagger(FileSystemEventHandler):
         return {f.name: File(f, self) for f in Path(self.watch_dir).glob("*.mkv")}
 
     def scan(self, reset: bool = False) -> dict[str, "File"]:
+
+        if self._error_state:
+            return {}
 
         dir_files = self._get_dir_files()
 
@@ -159,10 +186,20 @@ class MkvTagger(FileSystemEventHandler):
         with open(self.log_file, "w") as f:
             # update the log file if the file already exists, otherwise append
             # merge the logged files with the new files
-            json.dump({f.name: f.to_json() for f in merged.values()}, f, indent=2)
+            try:
+                json.dump({f.name: f.to_json() for f in merged.values()}, f, indent=2)
+            except Exception as e:
+                handle_json_error(
+                    f"Error writing to log file '{self.log_file}' - ensure it is writable.",
+                    e,
+                    self,
+                )
         return merged
 
     def process_file(self, file: File):
+
+        if self._error_state:
+            return
 
         if file.status in ["done"]:
             return
