@@ -178,7 +178,6 @@ class MkvTagger(FileSystemEventHandler):
             name: file
             for name, file in dir_files.items()
             if name not in self.logged_files.keys()
-            or self.logged_files[name].status == "gone"
         }
 
         merged = {**self.logged_files, **new_files}
