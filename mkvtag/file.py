@@ -20,35 +20,36 @@ class File:
     def __init__(self, file_path: Path, tagger: "MkvTagger", **kwargs):
 
         self.path = file_path
-        if not file_path.exists():
-            underscored = {
-                f"_{k}": v
-                for k, v in kwargs.items()
-                if k
-                in [
-                    "mtime",
-                    "size",
-                    "last_mtime",
-                    "last_size",
-                    "failed_count",
-                    "status",
-                    "tagger",
-                ]
-            }
-            self.__dict__.update({k: v for k, v in underscored.items()})
-            if not "_mtime" in underscored:
+        underscored = {
+            f"_{k}": v
+            for k, v in kwargs.items()
+            if k
+            in [
+                "mtime",
+                "size",
+                "last_mtime",
+                "last_size",
+                "failed_count",
+                "status",
+                "tagger",
+            ]
+        }
+        self.__dict__.update({k: v for k, v in underscored.items()})
+        if not "_mtime" in underscored:
+            try:
+                self._mtime = file_path.stat().st_mtime
+            except FileNotFoundError:
                 self._mtime = 0.0
-            if not "_last_mtime" in underscored:
-                self._last_mtime = 0.0
-            if not "_size" in underscored:
-                self._size = 0
-            if not "_last_size" in underscored:
-                self._last_size = 0
-        else:
-            self._mtime = file_path.stat().st_mtime
+        if not "_last_mtime" in underscored:
             self._last_mtime = self._mtime
-            self._size = file_path.stat().st_size
+        if not "_size" in underscored:
+            try:
+                self._size = file_path.stat().st_size
+            except FileNotFoundError:
+                self._size = 0
+        if not "_last_size" in underscored:
             self._last_size = self._size
+
         self._status: Status = "new"
         self._failed_count = 0
         self._tagger = tagger
