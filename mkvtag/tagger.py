@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import subprocess
@@ -56,7 +57,9 @@ class MkvTagger(FileSystemEventHandler):
     def process_dir(self):
         if self.error_state:
             return
-        for file in self.files.values():
+
+        # Make a copy of the files dict to avoid RuntimeError: dictionary changed size during iteration
+        for file in copy.deepcopy(self.files).values():
             self.process_file(file)
 
     def on_modified(self, event):

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mkvtag"
-version = "0.0.2"
+version = "0.0.3"
 description = "A small dockerized python app that watches a dir and runs \"mkvpropedit --add-track-statistics-tags\" on new files."
 authors = ["Brandon Shelley <brandon@pacificaviator.co>"]
 license = "MIT"
