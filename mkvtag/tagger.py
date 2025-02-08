@@ -227,9 +227,10 @@ class MkvTagger(FileSystemEventHandler):
                     "gone",
                 ]:
                     file._status = file_data[file.name]["status"]
-                    print(
-                        f"File '{file.name}' is set to '{file.status}' in log file, skipping..."
-                    )
+                    if file.status == "done":
+                        print(
+                            f"File '{file.name}' is set to '{file.status}' in log file, skipping..."
+                        )
                     return
             except json.JSONDecodeError as e:
                 self.handle_json_error(
