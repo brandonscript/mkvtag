@@ -138,13 +138,26 @@ class File:
         self.save_to_log()
 
     def rename(self, new_name: str | None = None):
+
+        # if the file is gone or waiting, don't rename
+        if self.status in ["gone", "waiting"]:
+            return
+
+        old_path = self.path
         new_path = self.path.with_name(new_name or self.clean_name)
         # if the new name is the same as the old name, don't rename
         if new_path == self.path:
             return
         self.path.rename(new_path)
         self.path = new_path
+        # update the file in the tagger
         self._tagger.files[self.name] = self
+        # rename the file in the log
+        with open(self._tagger.log_file, "w") as f:
+            # find the old_path in the log and rename it
+            logged_files = json.load(f)
+            logged_files[new_path.name] = logged_files.pop(old_path.name)
+            json.dump(logged_files, f, indent=2)
 
     @classmethod
     def from_json(cls, data: dict, *, tagger: "MkvTagger", **kwargs):
