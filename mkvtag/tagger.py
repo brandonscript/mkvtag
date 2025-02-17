@@ -171,11 +171,6 @@ class MkvTagger(FileSystemEventHandler):
 
         dir_files = self._get_dir_files()
 
-        if self.rename_exp:
-            for file in dir_files.values():
-                file.rename()
-            dir_files = self._get_dir_files()
-
         # add new files from dir_files to logged_files
         new_files = {
             name: file
@@ -325,6 +320,10 @@ class MkvTagger(FileSystemEventHandler):
                     raise subprocess.CalledProcessError(res.returncode, res.args)
                 print(f"Done\n")
                 file.status = "done"
+
+                if self.rename_exp:
+                    file.rename()
+                file.save_to_log()
 
         except subprocess.CalledProcessError as e:
             msg = f"Error processing file: {file.name}"

@@ -39,6 +39,10 @@
       },
       "editor.defaultFormatter": "ms-python.black-formatter"
     },
-    "editor.insertSpaces": true
+    "editor.insertSpaces": true,
+    "python.analysis.inlayHints.pytestParameters": true,
+    "python.testing.pytestEnabled": true,
+    "python.testing.cwd": "",
+    "python.testing.pytestPath": ""
   }
 }

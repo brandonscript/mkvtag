@@ -15,3 +15,20 @@ def clean_test_files():
 
     for file in test_dir.glob("*.json"):
         os.remove(file)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def prep_test_files():
+
+    if (
+        file := Path(
+            "./tests/fixtures/Gangs.of.New.York.2002.BluRay.1080p.DTS-HD.MA.5.1.FraMeSToR.mkv"
+        )
+    ).exists():
+        file.rename(
+            file.with_name(
+                "Gangs.of.New.York.2002.BluRay.1080p.REMUX.AVC.DTS-HD.MA.5.1.FraMeSToR.mkv"
+            )
+        )
+
+    yield

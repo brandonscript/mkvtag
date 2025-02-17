@@ -79,3 +79,6 @@ indent-style = "space"
 line-ending = "auto"
 skip-magic-trailing-comma = false
 quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

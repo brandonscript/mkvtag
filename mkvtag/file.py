@@ -20,6 +20,7 @@ class File:
     def __init__(self, file_path: Path, tagger: "MkvTagger", **kwargs):
 
         self.path = file_path
+        self.original_path = file_path
         underscored = {
             f"_{k}": v
             for k, v in kwargs.items()
@@ -143,7 +144,7 @@ class File:
         if self.status in ["gone", "waiting"]:
             return
 
-        old_path = self.path
+        orig_name = self.name
         new_path = self.path.with_name(new_name or self.clean_name)
         # if the new name is the same as the old name, don't rename
         if new_path == self.path:
@@ -151,13 +152,8 @@ class File:
         self.path.rename(new_path)
         self.path = new_path
         # update the file in the tagger
-        self._tagger.files[self.name] = self
-        # rename the file in the log
-        with open(self._tagger.log_file, "w") as f:
-            # find the old_path in the log and rename it
-            logged_files = json.load(f)
-            logged_files[new_path.name] = logged_files.pop(old_path.name)
-            json.dump(logged_files, f, indent=2)
+        # remove the old file from the tagger
+        self._tagger.files[self.name] = self._tagger.files.pop(orig_name)
 
     @classmethod
     def from_json(cls, data: dict, *, tagger: "MkvTagger", **kwargs):
@@ -189,6 +185,11 @@ class File:
         logged_files = deepcopy(self._tagger.logged_files)
         # update the file in the logged files or add it if it doesn't exist
         logged_files[self.name] = self
+
+        # if self.original_path != self.path, delete the old file from the log
+        if self.original_path != self.path:
+            logged_files.pop(self.original_path.name, None)
+
         with open(self._tagger.log_file, "w") as f:
             json.dump({f.name: f.to_json() for f in logged_files.values()}, f, indent=2)
 
