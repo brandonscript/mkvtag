@@ -190,8 +190,9 @@ class File:
         if self.original_path != self.path:
             logged_files.pop(self.original_path.name, None)
 
-        with open(self._tagger.log_file, "w") as f:
-            json.dump({f.name: f.to_json() for f in logged_files.values()}, f, indent=2)
+        with open(self._tagger.log_file, "w", encoding="utf-8") as f:
+            data = {f.name: f.to_json() for f in logged_files.values()}
+            json.dump(data, f, indent=2)
 
     def __eq__(self, other):
         return self.name == other.name

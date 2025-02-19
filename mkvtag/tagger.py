@@ -96,13 +96,21 @@ class MkvTagger(FileSystemEventHandler):
         self._error_state_timestamp = 0
         return False
 
-    def handle_json_error(self, msg: str, err: Exception | json.JSONDecodeError):
+    def handle_json_error(
+        self, msg: str, err: Exception | json.JSONDecodeError, *, autofix: bool = True
+    ):
         self._error_state_timestamp = time.time()
         print(msg)
         if isinstance(err, json.JSONDecodeError):
             print(
                 f"Error: {err.msg} at line: {err.lineno}, column: {err.colno}, pos: {err.pos}"
             )
+
+        if autofix:
+            print("Re-creating log file...")
+            self.log_file.unlink()
+            self.get_log_file_data()
+
         if self.exc:
             raise err
 
@@ -120,7 +128,7 @@ class MkvTagger(FileSystemEventHandler):
             return {}
 
         if not self.log_file.exists():
-            print(f"Log file '{self.log_file}' does not exist, creating it.")
+            print(f"Creating log file '{self.log_file}'")
             self.log_file.parent.mkdir(parents=True, exist_ok=True)
             self.log_file.touch()
 
@@ -143,6 +151,7 @@ class MkvTagger(FileSystemEventHandler):
                 self.handle_json_error(
                     f"Error decoding JSON data from log file - delete {self.log_file} or ensure it contains a valid JSON object ('{{}}').",
                     e,
+                    autofix=True,
                 )
                 return {}
 
@@ -195,12 +204,14 @@ class MkvTagger(FileSystemEventHandler):
         with open(self.log_file, "w") as f:
             # update the log file if the file already exists, otherwise append
             # merge the logged files with the new files
+            data = {f.name: f.to_json() for f in merged.values()}
             try:
-                json.dump({f.name: f.to_json() for f in merged.values()}, f, indent=2)
+                json.dump(data, f, indent=2)
             except Exception as e:
                 self.handle_json_error(
                     f"Error writing to log file '{self.log_file}'.",
                     e,
+                    autofix=True,
                 )
         return merged
 
