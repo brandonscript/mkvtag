@@ -149,17 +149,13 @@ class MkvTagger(FileSystemEventHandler):
 
         with open(self.log_file, "r") as f:
             try:
-
-                f_text = f.read().strip()
-                # if log file has text content but does not start with '{' and end with '}', raise
-                if f_text and not ((f_text.startswith("{") and f_text.endswith("}"))):
+                file_data = json.load(f)
+                if not isinstance(file_data, dict):
                     raise json.JSONDecodeError(
-                        f"Invalid JSON data in {self.log_file} – expected an object ('{{}}').",
+                        f"Expected JSON object ('{{}}'), got {type(file_data).__name__}",
                         "",
                         0,
                     )
-
-                file_data = json.loads(f_text) if f_text else {}
             except json.JSONDecodeError as e:
                 self.handle_json_error(
                     f"Error decoding JSON data from log file - delete {self.log_file} or ensure it contains a valid JSON object ('{{}}').",
