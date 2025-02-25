@@ -33,7 +33,7 @@ class MkvTagger(FileSystemEventHandler):
         self.watch_dir = watch_dir
         self.rename_exp = rename_exp
         self.exc = exc
-        self.log_file = (
+        self._log_file = (
             (self.watch_dir / LOG_FILE_NAME)
             if not log_file
             else (
@@ -53,6 +53,18 @@ class MkvTagger(FileSystemEventHandler):
         self.files = self.scan(reset=True)
 
         self.process_dir()
+
+    @property
+    def log_file(self) -> Path:
+        # Always re-check the log file path to see if it's gone or done before processing again.
+        # if it's gone, create a new one
+        if not self._log_file.exists():
+            self._log_file.parent.mkdir(parents=True, exist_ok=True)
+            self._log_file.touch()
+            # Write an empty object to the log file
+            with open(self._log_file, "w") as f:
+                f.write("{}\n")
+        return self._log_file
 
     def process_dir(self):
         if self.error_state:
@@ -108,7 +120,8 @@ class MkvTagger(FileSystemEventHandler):
 
         if autofix:
             print("Re-creating log file...")
-            self.log_file.unlink()
+            self._log_file.unlink()
+            self.log_file
             self.get_log_file_data()
 
         if self.exc:
