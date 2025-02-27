@@ -155,6 +155,8 @@ class MkvTagger(FileSystemEventHandler):
         msg = msg if not autofix else f"{msg} (re-creating)"
         print(msg, "\n")
         if autofix:
+            self._log_data = {}
+            self.log_file.unlink(missing_ok=True)
             self.read_log()
 
         if self.exc:
@@ -203,7 +205,7 @@ class MkvTagger(FileSystemEventHandler):
                     self._log_data = file_data
                 except json.JSONDecodeError as e:
                     self.handle_json_error(
-                        f"Log file is malformed ('{self.log_file}')",
+                        f"Log file is malformed - '{self.log_file}'",
                         e,
                         autofix=True,
                     )
