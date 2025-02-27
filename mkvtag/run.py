@@ -1,11 +1,13 @@
 import argparse
+import asyncio
 import subprocess
 import time
 from pathlib import Path
+from typing import cast
 
 from watchdog.observers import Observer
 
-from mkvtag.args import Args
+from mkvtag.args import Args, MkvTagArgs
 from mkvtag.tagger import MkvTagger
 
 
@@ -20,11 +22,14 @@ def main():
     Args.path(parser)
     Args.log(parser)
     Args.timer(parser)
+    Args.wait(parser)
     Args.loops(parser)
     Args.clean(parser)
+    Args.precheck(parser)
     Args.exc(parser)
 
-    args, _ = parser.parse_known_args()
+    _args, _ = parser.parse_known_args()
+    args = cast(MkvTagArgs, _args)
 
     path = Path(args.path)
     if not path.is_absolute():
@@ -34,9 +39,8 @@ def main():
 
     print(f"mkvtag is watching directory: {path}")
 
-    tagger = MkvTagger(
-        watch_dir=path, log_file=args.log, rename_exp=args.clean, exc=args.exc
-    )
+    # print(f"init - pid, thread_id: {os.getpid(), threading.get_ident()}")
+    tagger = MkvTagger(watch_dir=path, args=args)
     observer = Observer()
     observer.schedule(tagger, path, recursive=False)
     observer.start()
@@ -45,14 +49,18 @@ def main():
     try:
         while args.loops < 0 or counter < args.loops:
             counter += 1
-            time.sleep(args.timer)
+            tagger.refresh()
             tagger.process_dir()
+            time.sleep(args.timer)
 
     except KeyboardInterrupt:
         ...
-    observer.stop()
-    observer.join()
-    print("mkvtag has stopped.")
+    except asyncio.CancelledError:
+        print("\nmkvtag was cancelled inside an asyncio loop")
+    finally:
+        observer.stop()
+        observer.join()
+    print("\nmkvtag has stopped")
 
 
 if __name__ == "__main__":

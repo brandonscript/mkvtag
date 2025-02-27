@@ -94,13 +94,17 @@ Matrix coefficients                      : BT.709
 - `--log=./path/to/logfile.log`: Specify a custom log file path. Default is `./watchdir/mkvtag.log`.
 - `-t, --timer=30`: Specify the number of seconds to wait before checking for new files. Default is `30`.
 - `-l, --loops=-1`: Specify the number of loops to run before exiting. Default is `-1` (infinite).
+- `-w, --wait=30`: Specify the number of seconds to wait after a file is modified before processing. Default is `30`.
 - `-x, --clean [._]*(remove|text)`: Specify a regex pattern to remove from the filename. Default is empty (no cleaning). Useful for removing unwanted text from filenames after conversion.
+- `-c, --precheck`: Check each file for existing bitrate info before processing. If the file already has bitrate info, it will not be processed. Default is `false`.
 
 Env variables can also be used to set these options:
 - `MKVTAG_LOGFILE`: Custom log file path.
-- `MKVTAG_TIMER`: Number of seconds to wait before checking for new files.
-- `MKVTAG_LOOPS`: Number of loops to run before exiting.
-- `MKVTAG_CLEAN`: Regex pattern to remove from the filename.
+- `MKVTAG_TIMER`:   Seconds to wait before checking for new files.
+- `MKVTAG_WAIT`:    Seconds to wait after a file is modified before processing.
+- `MKVTAG_LOOPS`:   Number of loops to run before exiting. Default is `-1` (infinite).
+- `MKVTAG_CLEAN`:   Regex pattern to remove from the filename.
+- `MKVTAG_PRECHECK`: Run a pre-check on each file before processing. Default is `false`.
 
 ## License
 

@@ -28,11 +28,17 @@ while [[ $# -gt 1 ]]; do
   --timer | -t)
     env_args+=("-e" "MKVTAG_TIMER=$value")
     ;;
+  --wait | -w)
+    env_args+=("-e" "MKVTAG_WAIT_TIME_=$value")
+    ;;
   --loops | -l)
     env_args+=("-e" "MKVTAG_LOOPS=$value")
     ;;
   --clean | -x)
     env_args+=("-e" "MKVTAG_CLEAN=$value")
+    ;;
+  --check | -c)
+    env_args+=("-e" "MKVTAG_PRECHECK=$value")
     ;;
   *)
     echo "Unknown option: $key"

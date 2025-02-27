@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from humanize import naturaltime
 
-from mkvtag.constants import MODIFIED_SAFE_TIME
 from mkvtag.typ import Status
 
 if TYPE_CHECKING:
@@ -63,7 +62,7 @@ class File:
         return self.path.name
 
     @property
-    def mtime(self):
+    def mtime(self) -> float:
         try:
             if self._mtime != self._last_mtime:
                 self._last_mtime = self._mtime
@@ -84,7 +83,7 @@ class File:
 
     @property
     def was_recently_modified(self):
-        return time.time() - self.mtime < MODIFIED_SAFE_TIME
+        return time.time() - self.mtime < self._tagger._args.wait
 
     @property
     def size(self):
@@ -123,9 +122,40 @@ class File:
 
     @status.setter
     def status(self, value: Status):
-        self._failed_count += 1 if value == "failed" else 0
+        self._tagger.read_log()
+        if logged_file := self._tagger.logged_files.get(self.name, None):
+            logged_status = logged_file.status
+            # We don't want to go backwards in the state machine, reject the change if the following conditions are met
+            reject_because_done_or_gone = logged_status in [
+                "done",
+                "gone",
+            ] and value not in ["new"]
+            reject_because_waiting = logged_status == "waiting" and value not in [
+                "done",
+                "ready",
+                "processing",
+            ]
+            reject_because_processing = logged_status == "processing" and value not in [
+                "done",
+                "ready",
+                "failed",
+            ]
+            reject_because_failed = logged_status == "failed" and value not in [
+                "new",
+                "ready",
+            ]
+            if (
+                reject_because_done_or_gone
+                or reject_because_waiting
+                or reject_because_processing
+                or reject_because_failed
+            ):
+                value = logged_status
+        if value == "failed":
+            self._failed_count += 1
         self._status = value
         self._tagger.files[self.name] = self
+        self._tagger._log_data[self.name] = self.to_json()
         self.save_to_log()
 
     @property
@@ -133,10 +163,7 @@ class File:
         return self._failed_count
 
     def fail(self):
-        self._failed_count += 1
-        self._status = "failed"
-        self._tagger.files[self.name] = self
-        self.save_to_log()
+        self.status = "failed"
 
     def rename(self, new_name: str | None = None):
 
@@ -151,9 +178,7 @@ class File:
             return
         self.path.rename(new_path)
         self.path = new_path
-        # update the file in the tagger
-        # remove the old file from the tagger
-        self._tagger.files[self.name] = self._tagger.files.pop(orig_name)
+        return orig_name
 
     @classmethod
     def from_json(cls, data: dict, *, tagger: "MkvTagger", **kwargs):
@@ -182,17 +207,31 @@ class File:
         }
 
     def save_to_log(self):
+        from mkvtag.tagger import LOG_FILE_LOCK
+
         logged_files = deepcopy(self._tagger.logged_files)
         # update the file in the logged files or add it if it doesn't exist
-        logged_files[self.name] = self
+        logged_files[self.name] = deepcopy(self)
 
         # if self.original_path != self.path, delete the old file from the log
         if self.original_path != self.path:
             logged_files.pop(self.original_path.name, None)
 
-        with open(self._tagger.log_file, "w", encoding="utf-8") as f:
-            data = {f.name: f.to_json() for f in logged_files.values()}
-            json.dump(data, f, indent=2)
+        data = {f.name: f.to_json() for f in logged_files.values()}
+
+        while LOG_FILE_LOCK.locked():
+            time.sleep(0.1)
+        with LOG_FILE_LOCK:
+            try:
+                with open(self._tagger.log_file, "w") as wf:
+                    json.dump(data, wf, indent=2, ensure_ascii=False)
+            except json.JSONDecodeError as e:
+                self._tagger.handle_json_error(
+                    f"Error (save_to_log) writing to log file '{self._tagger.log_file}'",
+                    e,
+                    autofix=False,
+                )
+                return {}
 
     def __eq__(self, other):
         return self.name == other.name
