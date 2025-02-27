@@ -15,6 +15,10 @@ while [[ $# -gt 1 ]]; do
     key="${arg%%=*}"
     value="${arg#*=}"
     shift
+  elif [[ "$arg" == "-c" || "$arg" == "--check" ]]; then
+    key="$2"
+    value="true"
+    shift
   else
     key="$2"
     value="$3"
