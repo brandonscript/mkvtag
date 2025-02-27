@@ -77,18 +77,25 @@ class MkvTagger(FileSystemEventHandler):
 
     def handle_renames(self):
         if self.rename_exp:
-            renamed = [f for f in [file.rename() for file in self.files.values()] if f]
+            renamed = [file.rename() for file in self.files.values()]
             if any(renamed):
                 self.files = {
                     file.name: file
                     for file in self.files.values()
                     if file.name not in renamed
                 }
-                self._log_data = {
-                    k: v for k, v in self._log_data.items() if k not in renamed
+                old_keys = [r[0] for r in renamed if r]
+                # rename the keys in self._log_data using the (old, new) pairs in renamed
+                renamed_entries = {
+                    n: self._log_data[o] for o, n in [r for r in renamed if r]
                 }
-            [f.save_to_log() for f in self.files.values()]
-            self.read_log()
+                self._log_data = {
+                    k: v for k, v in self._log_data.items() if k not in old_keys
+                }
+                self._log_data = {**self._log_data, **renamed_entries}
+
+                [f.save_to_log() for f in self.files.values()]
+                self.read_log()
 
     def on_created(self, event: FileSystemEvent) -> None:
         self.refresh()
@@ -314,8 +321,6 @@ class MkvTagger(FileSystemEventHandler):
         if file.status in ["done"] or file.failed_count >= 3:
             return
 
-        print_title()
-
         if (
             self._args.precheck
             and (bitrate := self.check_file_bitrate(file))
@@ -323,6 +328,7 @@ class MkvTagger(FileSystemEventHandler):
         ):
             if not file.status == "done":
                 bitrate_human = naturalsize(int(bitrate))
+                print_title()
                 print(f"Already has bitrate info ({bitrate_human}/s)")
             file.status = "done"
             return
@@ -353,24 +359,29 @@ class MkvTagger(FileSystemEventHandler):
             or file.size_changed_since_last_check
             or file.status == "waiting"
         ):
-
-            if not file.status == "waiting":
+            if file.status == "waiting":
+                if file.was_recently_modified or file.size_changed_since_last_check:
+                    time.sleep(self._args.timer)
+                if (
+                    not file.was_recently_modified
+                    and not file.size_changed_since_last_check
+                ):
+                    file.status = "ready"
+            else:
+                print_title()
                 print(f"Recently modified (waiting)")
                 file.status = "waiting"
-            time.sleep(self._args.timer)
-            if file.was_recently_modified or file.size_changed_since_last_check:
-                file.status = "waiting"
                 return
-            else:
-                file.status = "ready"
 
         if file.status == "failed":
             if file.failed_count >= 3:
                 return
+            print_title()
             print(f"Processing failed, retrying...")
             file.status = "ready"
 
         else:
+            print_title()
             print(f"Processing...")
         self._is_processing = True
         self._active_file = file.name
@@ -403,11 +414,13 @@ class MkvTagger(FileSystemEventHandler):
                 )
                 if res.returncode != 0:
                     raise subprocess.CalledProcessError(res.returncode, res.args)
+                print_title()
                 print(f"Done")
                 file.status = "done"
 
         except subprocess.CalledProcessError as e:
             file.fail()
+            print_title()
             print(
                 "Failed",
                 f"({file.failed_count}x){", giving up :(" if file.failed_count == 3 else ''}",

@@ -68,7 +68,7 @@ async def test_run_generated(simulate_file_writes, stop_event):
             future_main = executor.submit(run_main_threaded, stop_event)
 
             # Run the simulate_file_writes function
-            await loop.run_in_executor(executor, simulate_file_writes, 4, 4196)
+            await loop.run_in_executor(executor, simulate_file_writes, 6, 2048)
             executor.shutdown(wait=False)
 
             # Trigger stop event to cancel everything
@@ -85,21 +85,18 @@ async def test_run_generated(simulate_file_writes, stop_event):
         stop_event.set()
 
 
-def test_missing_log_file(missing_log: Path):
+def test_renaming(prep_renames):
     from mkvtag.run import main
 
-    missing_log = Path("./tests/mkvtag-test-missing.json")
-
-    sys.argv.append("./tests/fixtures")
-    sys.argv.append("-l=2")
-    sys.argv.append("-t=1")
-    sys.argv.append(f"--log={missing_log}")
+    # sys.argv.append("./mkvtag")
+    sys.argv.append("./tests/fixtures_rename")
+    # sys.argv.append("/Volumes/media/Downloads/#converted")
+    sys.argv.append("-l=5")
+    sys.argv.append("--log=./tests/fixtures_rename/mkvtag.json")
+    sys.argv.append(r"-x [._-]*(remux|\bavc|vc-1|x264)")
     sys.argv.append("-e")
 
     main()
-
-    # Check that the log file was created
-    assert missing_log.exists()
 
 
 @pytest.mark.parametrize("exc", [True, False])

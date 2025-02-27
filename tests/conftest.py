@@ -204,3 +204,31 @@ def simulate_file_writes(
     yield wrapper()
 
     delete_files()
+
+
+@pytest.fixture(scope="function", autouse=True)
+def prep_renames():
+    # delete all files in the fixtures_rename directory
+    rename_dir = Path("./tests/fixtures_rename")
+    for file in rename_dir.glob("*"):
+        file.unlink()
+    rename_dir.mkdir(parents=True, exist_ok=True)
+    # copy '(fixtures_dir / "sample_960x540.mkv")' to the rename directory several times with new names
+
+    m = [
+        "Gangs.of.New.York.2002.BluRay.1080p.x265.10-bit.DTS-HD.MA.5.1.FraMeSToR.mkv",
+        "Dredd.2012.1080p.BluRay.AVC.REMUX.DTS-HD.MA.7.1.x264-AllYgaTrZ.mkv",
+        "The.Matrix.1999.1080p.BluRay.REMUX.DTS-HD.MA.7.1.x264-TayTO.mkv",
+        "John.Wick.2014.1080p.BluRay.REMUX.DTS-HD.MA.7.1.x264-PHD.mkv",
+    ]
+
+    for name in m:
+        (rename_dir / name).write_bytes(
+            (fixtures_dir / "sample_960x540.mkv").read_bytes()
+        )
+
+    yield
+
+    # delete all files in the fixtures_rename directory
+    for file in rename_dir.glob("*"):
+        file.unlink()

@@ -175,10 +175,11 @@ class File:
         new_path = self.path.with_name(new_name or self.clean_name)
         # if the new name is the same as the old name, don't rename
         if new_path == self.path:
-            return
+            return None
         self.path.rename(new_path)
         self.path = new_path
-        return orig_name
+        print(f"\nRenamed '{orig_name}'\n      → '{self.name}'")
+        return (orig_name, self.name)
 
     @classmethod
     def from_json(cls, data: dict, *, tagger: "MkvTagger", **kwargs):
