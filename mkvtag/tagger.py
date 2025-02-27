@@ -291,23 +291,28 @@ class MkvTagger(FileSystemEventHandler):
     def check_file_bitrate(self, file: File):
         # Runs `mkvinfo -t {file} | awk '/\+ Track/ {track=1} /Track type: video/ {video=track} video && /Name: BPS/ {getline; print $NF; exit}' | xargs`
         # and returns the bitrate of the video track in the file
+        try:
 
-        cmd = [
-            "mkvinfo",
-            "-t",
-            str(file.path),
-            "|",
-            "awk",
-            "'/\\+ Track/ {track=1} /Track type: video/ {video=track} video && /Name: BPS/ {getline; print $NF; exit}'",
-            "|",
-            "xargs",
-        ]
-        res = subprocess.run(
-            " ".join(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True
-        )
-        if res.returncode != 0:
-            raise subprocess.CalledProcessError(res.returncode, res.args)
-        return res.stdout.decode("utf-8").strip()
+            cmd = [
+                "mkvinfo",
+                "-t",
+                str(file.path),
+                "|",
+                "awk",
+                "'/\\+ Track/ {track=1} /Track type: video/ {video=track} video && /Name: BPS/ {getline; print $NF; exit}'",
+                "|",
+                "xargs",
+            ]
+            res = subprocess.run(
+                " ".join(cmd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+            )
+            return res.stdout.decode("utf-8").strip()
+        except subprocess.CalledProcessError as _e:
+            # bitrate checking might not be available on all systems, so just return an empty string
+            return ""
 
     def process_file(self, file: File):
 
