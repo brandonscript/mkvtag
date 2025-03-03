@@ -45,12 +45,17 @@ def main():
     observer.schedule(tagger, path, recursive=False)
     observer.start()
 
+    for file in path.iterdir():
+        filename = Path(path / file)
+        if filename.is_file() and filename.suffix == ".mkv":
+            observer.event_queue.put_nowait((filename, None))
+
     counter = 0
     try:
         while args.loops < 0 or counter < args.loops:
             counter += 1
-            tagger.refresh()
-            tagger.process_dir()
+            # tagger.refresh()
+            # tagger.process_dir()
             time.sleep(args.timer)
 
     except KeyboardInterrupt:
