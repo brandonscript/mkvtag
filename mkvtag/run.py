@@ -45,10 +45,9 @@ def main():
     observer.schedule(tagger, path, recursive=False)
     observer.start()
 
-    for file in path.iterdir():
-        filename = Path(path / file)
-        if filename.is_file() and filename.suffix == ".mkv":
-            observer.event_queue.put_nowait((filename, None))
+    for p in [Path(path / p) for p in path.iterdir()]:
+        if p.is_file() and p.suffix == ".mkv":
+            observer.event_queue.put_nowait((p, None))
 
     counter = 0
     try:

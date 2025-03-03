@@ -361,24 +361,17 @@ class MkvTagger(FileSystemEventHandler):
         if self._is_processing or self.is_active_file(file):
             return
 
-        if (
-            file.was_recently_modified
-            or file.size_changed_since_last_check
-            or file.status == "waiting"
-        ):
-            if file.status == "waiting":
-                if file.was_recently_modified or file.size_changed_since_last_check:
-                    time.sleep(self._args.timer)
-                if (
-                    not file.was_recently_modified
-                    and not file.size_changed_since_last_check
-                ):
-                    file.status = "ready"
-            else:
-                print_title()
-                print(f"Recently modified (waiting)")
-                file.status = "waiting"
+        if file.status == "waiting":
+            if file.was_recently_modified or file.size_changed_since_last_check:
+                time.sleep(self._args.timer)
                 return
+            else:
+                file.status = "ready"
+        elif file.was_recently_modified or file.size_changed_since_last_check:
+            print_title()
+            print(f"Recently modified (waiting)")
+            file.status = "waiting"
+            return
 
         if file.status == "failed":
             if file.failed_count >= 3:
