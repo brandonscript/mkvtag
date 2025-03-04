@@ -163,3 +163,5 @@ cython_debug/
 *.mkv
 mkvtag/mkvtag.json
 mkvtag/processed_files.txt
+mkvtag/tagger.py
+tests/fixtures_generated/.thread_enabled

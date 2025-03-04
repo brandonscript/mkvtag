@@ -34,6 +34,7 @@ class MkvTagger(FileSystemEventHandler):
         args=MkvTagArgs(),
     ):
         self._last_title_printed = ""
+        self._last_printed_str = ""
         self.watch_dir = watch_dir
         self.rename_exp = args.clean
         self.exc = args.exc
@@ -313,6 +314,14 @@ class MkvTagger(FileSystemEventHandler):
                 return
             print(f"\n'{file.name}'")
             self._last_title_printed = file.name
+            self._last_printed_str = ""
+
+        def print_msg(msg: str):
+            print_title()
+            if msg == self._last_printed_str:
+                return
+            print(msg)
+            self._last_printed_str = msg
 
         # if file is missing, set it to "gone" and return
         if not file.path.exists():
@@ -333,7 +342,7 @@ class MkvTagger(FileSystemEventHandler):
             if not file.status == "done":
                 bitrate_human = naturalsize(int(bitrate))
                 print_title()
-                print(f"Already has bitrate info ({bitrate_human}/s)")
+                print_msg(f"Already has bitrate info ({bitrate_human}/s)")
             file.status = "done"
             self.rename_file(file)
             return
@@ -366,8 +375,8 @@ class MkvTagger(FileSystemEventHandler):
             else:
                 file.status = "ready"
         elif file.was_recently_modified or file.size_changed_since_last_check:
-            print_title()
-            print(f"New (waiting)")
+            # print_title()
+            # print_msg(f"New (waiting, modified less than {self._args.wait}s ago)")
             file.status = "waiting"
             return
 
@@ -375,12 +384,12 @@ class MkvTagger(FileSystemEventHandler):
             if file.failed_count >= 3:
                 return
             print_title()
-            print(f"Processing failed, retrying...")
+            print_msg(f"Processing failed, retrying...")
             file.status = "ready"
 
         else:
             print_title()
-            print(f"Processing...")
+            print_msg(f"Processing...")
         self._is_processing = True
         self._active_file = file.name
         file.status = "processing"
@@ -420,9 +429,8 @@ class MkvTagger(FileSystemEventHandler):
         except subprocess.CalledProcessError as e:
             file.fail()
             print_title()
-            print(
-                "Failed",
-                f"({file.failed_count}x){", giving up :(" if file.failed_count == 3 else ''}",
+            print_msg(
+                f"Failed ({file.failed_count}x){", giving up :(" if file.failed_count == 3 else ''}",
             )
             if proc_error := (e.stderr.decode("utf-8") if e and e.stderr else ""):
                 print(proc_error)

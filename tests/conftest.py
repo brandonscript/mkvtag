@@ -190,7 +190,7 @@ def make_test_file(
                 return
             f.write(file_content[i : i + chunk_size])
             f.flush()
-            time.sleep(0.01)  # 10 ms
+            time.sleep(0.002)  # 2 ms
 
     if add_to_log:
         log = dest_dir / "mkvtag.json"
@@ -227,14 +227,13 @@ def simulate_file_writes(
 
     def write_files(*, files: int = 10, chunk_size: int = 4096):
         for i in range(files):
-            is_even = i % 2 == 0
             if not thread_enabled_file.exists():
                 # print(f"gen/test ({pid}) thread is disabled")
                 return
-            time.sleep(1)
+            time.sleep(0.5)
             make_test_file(
                 generated_dir,
-                with_bps=is_even,
+                with_bps=i == 2,
                 chunk_size=chunk_size,
                 stop_event=stop_event,
             )

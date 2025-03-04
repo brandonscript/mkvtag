@@ -56,8 +56,9 @@ def run_main_threaded(
     print(f"App thread (pid: {pid}) finished")
 
 
+@pytest.mark.parametrize("chunk_size", [2048, 128])
 @pytest.mark.asyncio
-async def test_run_generated(simulate_file_writes, stop_event):
+async def test_run_generated(simulate_file_writes, chunk_size, stop_event):
 
     import asyncio
     import concurrent.futures
@@ -73,9 +74,9 @@ async def test_run_generated(simulate_file_writes, stop_event):
     try:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Start the app in a thread
-            future_main = executor.submit(run_main_threaded, stop_event)
+            future_main = executor.submit(run_main_threaded, stop_event, wait_time=5)
             future_simulate = executor.submit(
-                simulate_file_writes, files=6, chunk_size=4096
+                simulate_file_writes, files=6, chunk_size=chunk_size
             )
 
             for future in concurrent.futures.as_completed(
