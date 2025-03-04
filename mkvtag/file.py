@@ -191,7 +191,7 @@ class File:
             return None
         self.path.rename(new_path)
         self.path = new_path
-        print(f"Renamed '{orig_name}'\n––––––– '{self.name}'")
+        print(f"Renaming:\n × | '{orig_name}'\n → | '{self.name}'")
 
         self._tagger.files[new_name] = self._tagger.files.pop(orig_name)
         self._tagger._log_data.pop(orig_name)
