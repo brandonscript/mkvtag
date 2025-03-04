@@ -10,13 +10,15 @@ from typing import Any
 
 from deepdiff import DeepDiff
 from humanize import naturalsize
-from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.events import FileModifiedEvent, FileSystemEvent, FileSystemEventHandler
 
 from mkvtag.args import MkvTagArgs
 from mkvtag.constants import LOG_FILE_NAME
 from mkvtag.file import File
 
 LOG_FILE_LOCK = Lock()
+
+from watchdog.observers.api import BaseObserver
 
 
 class MkvTagger(FileSystemEventHandler):
@@ -53,7 +55,7 @@ class MkvTagger(FileSystemEventHandler):
 
         print("Watching for new files...\n")
 
-        self.process_dir()
+        self.refresh()
 
     def refresh(self):
         if self.error_state:
@@ -65,37 +67,6 @@ class MkvTagger(FileSystemEventHandler):
             return
 
         self.files = scan
-
-    def process_dir(self):
-        self.refresh()
-
-        # Make a copy of the files dict to avoid RuntimeError: dictionary changed size during iteration
-        for file in self.files.values():
-            self.process_file(file)
-
-        self.handle_renames()
-
-    def handle_renames(self):
-        if self.rename_exp:
-            renamed = [file.rename() for file in self.files.values()]
-            if any(renamed):
-                self.files = {
-                    file.name: file
-                    for file in self.files.values()
-                    if file.name not in renamed
-                }
-                old_keys = [r[0] for r in renamed if r]
-                # rename the keys in self._log_data using the (old, new) pairs in renamed
-                renamed_entries = {
-                    n: self._log_data[o] for o, n in [r for r in renamed if r]
-                }
-                self._log_data = {
-                    k: v for k, v in self._log_data.items() if k not in old_keys
-                }
-                self._log_data = {**self._log_data, **renamed_entries}
-
-                [f.save_to_log() for f in self.files.values()]
-                self.read_log()
 
     def on_created(self, event: FileSystemEvent) -> None:
         self.refresh()
@@ -133,6 +104,16 @@ class MkvTagger(FileSystemEventHandler):
                 self.files[file.name] = file
                 file.status = "gone"
             self.process_file(file)
+
+    def queue_files(self, observer: BaseObserver) -> None:
+        for mkv in Path(self.watch_dir).glob("*.mkv"):
+            # if the file is not in self.files and done, add to queue
+            if not (file := self.files.get(mkv.name)) or not file.status == "done":
+                # print("(Re-)queueing", mkv.name, f"({file.status if file else "new"})")
+                if emitter := next(iter(observer.emitters)):
+                    emitter.queue_event(
+                        event=FileModifiedEvent(str(mkv), is_synthetic=True),
+                    )
 
     def is_active_file(self, file: File):
         return file.name == self._active_file
@@ -314,6 +295,17 @@ class MkvTagger(FileSystemEventHandler):
             # bitrate checking might not be available on all systems, so just return an empty string
             return ""
 
+    def rename_file(self, file: File):
+        if self.rename_exp and file.status == "done":
+            [orig, new] = file.rename() or [None, None]
+            if not orig or not new:
+                return
+            self.files[new] = self.files.pop(orig)
+            self._log_data.pop(orig)
+            self._log_data[new] = file.to_json()
+            file.save_to_log()
+            self.read_log()
+
     def process_file(self, file: File):
 
         def print_title():
@@ -321,6 +313,11 @@ class MkvTagger(FileSystemEventHandler):
                 return
             print(f"\n'{file.name}'")
             self._last_title_printed = file.name
+
+        # if file is missing, set it to "gone" and return
+        if not file.path.exists():
+            file.status = "gone"
+            return
 
         if self.error_state:
             return
@@ -338,6 +335,7 @@ class MkvTagger(FileSystemEventHandler):
                 print_title()
                 print(f"Already has bitrate info ({bitrate_human}/s)")
             file.status = "done"
+            self.rename_file(file)
             return
 
         if (
@@ -362,14 +360,14 @@ class MkvTagger(FileSystemEventHandler):
             return
 
         if file.status == "waiting":
+            time.sleep(0.1)
             if file.was_recently_modified or file.size_changed_since_last_check:
-                time.sleep(self._args.timer)
                 return
             else:
                 file.status = "ready"
         elif file.was_recently_modified or file.size_changed_since_last_check:
             print_title()
-            print(f"Recently modified (waiting)")
+            print(f"New (waiting)")
             file.status = "waiting"
             return
 
@@ -388,7 +386,7 @@ class MkvTagger(FileSystemEventHandler):
         file.status = "processing"
 
         try:
-            if file.name == "sample_1280x720_failed.mkv":
+            if "pytest" in sys.modules and file.name == "sample_1280x720_failed.mkv":
                 raise subprocess.CalledProcessError(
                     1,
                     "mkvpropedit --add-track-statistics-tags [test] failure (intentional)",
@@ -415,8 +413,9 @@ class MkvTagger(FileSystemEventHandler):
                 if res.returncode != 0:
                     raise subprocess.CalledProcessError(res.returncode, res.args)
                 print_title()
-                print(f"Done")
                 file.status = "done"
+                self.rename_file(file)
+                print(f"Done")
 
         except subprocess.CalledProcessError as e:
             file.fail()

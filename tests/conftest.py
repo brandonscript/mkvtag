@@ -1,7 +1,9 @@
+import json
 import os
 import signal
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -10,6 +12,18 @@ import pytest
 fixtures_dir = Path("./tests/fixtures")
 fixtures_safe_dir = Path("./tests/fixtures_safe")
 generated_dir = Path("./tests/fixtures_generated")
+
+
+@pytest.fixture(scope="function", autouse=True)
+def rm_pytest_args():
+    print("rm_pytest_args", sys.argv)
+    if "--" in sys.argv or not any("pytest" in arg for arg in sys.argv):
+        return
+
+    pytest_arg_index = [i for i, arg in enumerate(sys.argv) if "pytest" in arg][0]
+    sys.argv = sys.argv[: pytest_arg_index + 1]
+
+    yield
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -56,7 +70,8 @@ def missing_log():
 thread_enabled_file = generated_dir / ".thread_enabled"
 
 
-def kill_orphaned_test():
+@pytest.fixture(scope="function", autouse=True)
+def kill_orphaned_tests():
     pid = os.getpid()
     newest_timestamp = datetime.now()
 
@@ -107,15 +122,11 @@ def kill_orphaned_test():
 @pytest.fixture(scope="function", autouse=False)
 def thread_controller():
 
-    kill_orphaned_test()
-
     # create a file to indicate that the thread should be allowed to create files
     thread_enabled_file.parent.mkdir(parents=True, exist_ok=True)
     thread_enabled_file.touch(exist_ok=True)
     yield
     thread_enabled_file.unlink(missing_ok=True)
-
-    kill_orphaned_test()
 
 
 def signal_handler(sig, frame):
@@ -151,12 +162,59 @@ def stop_event(request):
     return event
 
 
-@pytest.fixture(scope="function", autouse=False)
-def simulate_file_writes(
-    thread_controller, stop_event
-):  # Runs a generator that creates and writes to several files in the test directory over a period of time
+def make_test_file(
+    dest_dir: Path,
+    *,
+    with_bps: bool = False,
+    chunk_size: int = 2048,
+    stop_event: threading.Event | None = None,
+    add_to_log: bool = False,
+):
+    """Create a test file in the destination directory."""
     import random
     import string
+
+    prefix = "gen_"
+    bps_content = (fixtures_dir / "sample_960x540.mkv").read_bytes()
+    no_bps_content = (fixtures_safe_dir / "sample_960x540_no_bps.mkv").read_bytes()
+
+    midfix = "" if with_bps else "_no_bps_"
+    file_content = bps_content if with_bps else no_bps_content
+    file_name = "".join(random.choices(string.ascii_letters, k=10))
+    file = (dest_dir / f"{prefix}{midfix}{file_name}").with_suffix(".mkv")
+    # Write the file in increments to simulate a file being written to
+    with file.open("wb") as f:
+        for i in range(0, len(file_content), chunk_size):
+            if not thread_enabled_file.exists() or (s := stop_event) and s.is_set():
+                # print(f"gen/test ({pid}) thread is disabled")
+                return
+            f.write(file_content[i : i + chunk_size])
+            f.flush()
+            time.sleep(0.01)  # 10 ms
+
+    if add_to_log:
+        log = dest_dir / "mkvtag.json"
+        if log.exists():
+            with log.open("r") as f:
+                data = json.load(f)
+        else:
+            data = {}
+        data[file.name] = {
+            "name": file.name,
+            "mtime": datetime.fromtimestamp(file.stat().st_mtime).isoformat(),
+            "size": file.stat().st_size,
+            "failed_count": 0,
+            "status": "new",
+        }
+        with log.open("w") as f:
+            json.dump(data, f, indent=2)
+
+
+@pytest.fixture(scope="function", autouse=False)
+def simulate_file_writes(
+    thread_controller,
+    stop_event,
+):  # Runs a generator that creates and writes to several files in the test directory over a period of time
     import time
 
     prefix = "gen_"
@@ -165,34 +223,23 @@ def simulate_file_writes(
 
     generated_dir.mkdir(parents=True, exist_ok=True)
 
-    bps_content = (fixtures_dir / "sample_960x540.mkv").read_bytes()
-    no_bps_content = (fixtures_safe_dir / "sample_960x540_no_bps.mkv").read_bytes()
-
     # pid = os.getpid()
 
-    def write_files(files: int = 10, chunk_size: int = 2048):
+    def write_files(*, files: int = 10, chunk_size: int = 4096):
         for i in range(files):
             is_even = i % 2 == 0
-            file_content = bps_content if is_even else no_bps_content
-            midfix = "" if is_even else "_no_bps_"
             if not thread_enabled_file.exists():
                 # print(f"gen/test ({pid}) thread is disabled")
                 return
             time.sleep(1)
-            file_name = "".join(random.choices(string.ascii_letters, k=10))
-            file = (generated_dir / f"{prefix}{midfix}{file_name}").with_suffix(".mkv")
-            # Write the file in increments to simulate a file being written to
-            with file.open("wb") as f:
-                for i in range(0, len(file_content), chunk_size):
-                    if not thread_enabled_file.exists() or stop_event.is_set():
-                        # print(f"gen/test ({pid}) thread is disabled")
-                        return
-                    f.write(file_content[i : i + chunk_size])
-                    f.flush()
-                    time.sleep(0.01)  # 10 ms
-                # print(f"gen/test ({pid}) wrote file:", file)
-        time.sleep(10)
+            make_test_file(
+                generated_dir,
+                with_bps=is_even,
+                chunk_size=chunk_size,
+                stop_event=stop_event,
+            )
         thread_enabled_file.unlink(missing_ok=True)
+        print(f"\nSimulated file writes complete, created {files} files.")
 
     def delete_files():
         for file in generated_dir.glob(f"{prefix}*"):
@@ -232,3 +279,42 @@ def prep_renames():
     # delete all files in the fixtures_rename directory
     for file in rename_dir.glob("*"):
         file.unlink()
+
+
+@pytest.fixture(scope="function", autouse=False)
+def existing_log_json():
+    log = fixtures_dir / "mkvtag.json"
+    if log.exists():
+        log.unlink()
+
+    # Create a new log for each file in the fixtures directory
+    # - if file contains "failed", make sure it has a failed_count > 0
+    # - set status of the rest into 3 categories: "done", "waiting", "new" (in order, with 1/3 of the files in each category)
+
+    files = list(fixtures_dir.glob("*.mkv"))
+    log_data = {}
+    files.sort(key=lambda x: x.name)
+    third = len(files) // 3
+    status = "new"
+    for i, file in enumerate(files):
+        if i < third:
+            status = "done"
+        elif i < 2 * third:
+            status = "waiting"
+        else:
+            status = "new"
+        failed_count = 1 if "failed" in file.name else 0
+        status = "failed" if failed_count > 0 else status
+        log_data[file.name] = {
+            "name": file.name,
+            "mtime": datetime.fromtimestamp(file.stat().st_mtime).isoformat(),
+            "size": file.stat().st_size,
+            "failed_count": failed_count,
+            "status": status,
+        }
+
+    log.write_text(json.dumps(log_data, indent=2))
+
+    yield [log_data, log]
+
+    log.unlink()

@@ -1,1 +1,16 @@
-{}{"file": { "name": "test.mkv" } }
+{
+  "Gangs.of.New.York.2002.BluRay.1080p.REMUX.AVC.DTS-HD.MA.5.1.FraMeSToR.mkv": {
+    "name": "Gangs.of.New.York.2002.BluRay.1080p.REMUX.AVC.DTS-HD.MA.5.1.FraMeSToR.mkv",
+    "mtime": "2025-03-03T15:33:58.943992",
+    "size": 71217900,
+    "failed_count": 0,
+    "status": "done"
+  },
+  "28.Days.2000.1080p.Blu-ray.DTS-HD.MA.5.1-HDT.mkv": {
+    "name": "28.Days.2000.1080p.Blu-ray.DTS-HD.MA.5.1-HDT.mkv",
+    "mtime": "2025-03-03T15:34:06.646839",
+    "size": 23986464230,
+    "failed_count": 0,
+    "status": "done"
+  }
+}

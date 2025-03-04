@@ -166,20 +166,38 @@ class File:
         self.status = "failed"
 
     def rename(self, new_name: str | None = None):
+        """Rename the file to a new name. If no new name is provided, the file will be renamed to the cleaned name.
+
+        Args:
+            new_name (str, optional): The new name for the file. Defaults to None.
+
+        Returns:
+            tuple[str, str]: [The original name, the new name] if the file was renamed, otherwise None
+        """
 
         # if the file is gone or waiting, don't rename
-        if self.status in ["gone", "waiting"]:
+        if (
+            self.status == "gone"
+            or not self.status == "done"
+            or not self._tagger.rename_exp
+        ):
             return
 
         orig_name = self.name
         new_path = self.path.with_name(new_name or self.clean_name)
+        new_name = new_path.name
         # if the new name is the same as the old name, don't rename
         if new_path == self.path:
             return None
         self.path.rename(new_path)
         self.path = new_path
-        print(f"\nRenamed '{orig_name}'\n      → '{self.name}'")
-        return (orig_name, self.name)
+        print(f"Renamed '{orig_name}'\n––––––– '{self.name}'")
+
+        self._tagger.files[new_name] = self._tagger.files.pop(orig_name)
+        self._tagger._log_data.pop(orig_name)
+        self._tagger._log_data[new_name] = self.to_json()
+        self.save_to_log()
+        self._tagger.read_log()
 
     @classmethod
     def from_json(cls, data: dict, *, tagger: "MkvTagger", **kwargs):
