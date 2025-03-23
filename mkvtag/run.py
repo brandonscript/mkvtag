@@ -117,6 +117,7 @@ def main(stop_event: threading.Event | None = None):
         if Path(path / ".mkvtag").exists():
             err += " If you are sure it is not, delete the '.mkvtag' file in that directory."
 
+        time.sleep(args.timer)
         raise PidFileAlreadyRunningError(err) from e
 
 
