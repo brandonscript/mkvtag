@@ -49,4 +49,7 @@ COPY --from=poetry $VENV_PATH $VENV_PATH
 # Run the script when the container launches
 ENV PYTHONUNBUFFERED=1
 # CMD ["poetry", "run", "mkvtag", "/watchdir"]
-ENTRYPOINT [ "entrypoint.sh" ]
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT [ "/entrypoint.sh" ]
